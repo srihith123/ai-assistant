@@ -19,11 +19,16 @@ def heuristic_split(prompt):
 
 # === Ask Gemini to split the prompt ===
 def split_tasks(prompt):
-    system_prompt = """Split this request into separate tasks. You MUST respond with ONLY a numbered list.
+    system_prompt = """Split this request into separate tasks.
+Make each task a basic task that can be run by the Wolfram Full Results API.
+You MUST respond with ONLY a numbered list.
 
 Example: "Plot sin(x) and explain its period"
 1. Plot sin(x)
-2. Explain its period
+2. Explain the period of the sin(x) function
+
+Example: "Graph the derivative of x"
+1. Plot the derivative of x
 
 Now split this request:"""
     try:
@@ -85,12 +90,16 @@ def smart_prompt(prompt):
     responses = []
 
     for task in tasks:
-        if wolfram_can_compute(task):
+        try:
+            # Directly query Wolfram Alpha Full Results API
             print(f"🔢 [Wolfram] {task}")
             answer = query_wolfram(task)
+            if "Wolfram full API failed." in answer or "Error parsing Wolfram response" in answer:
+                raise Exception("Wolfram API failed")
             responses.append(f"📊 **{task}** →\n{answer}")
-        else:
-            print(f"🧠 [Gemini] {task}")
+        except Exception as e:
+            # Fall back to Gemini if Wolfram fails
+            print(f"🧠 [Gemini] {task} (Fallback due to: {e})")
             gm = model.generate_content(task)
             responses.append(f"🤖 **{task}** → {gm.text.strip()}")
 
