@@ -1,117 +1,112 @@
 import os
 import re
-import html
 import requests
 import xml.etree.ElementTree as ET
 import google.generativeai as genai
 
 # === Configuration ===
-GEMINI_API_KEY = "AIzaSyA8qnV3aMpBpoGhiVoqFIxafNUtLoHRbA8"
+GEMINI_API_KEY   = "AIzaSyA8qnV3aMpBpoGhiVoqFIxafNUtLoHRbA8"
 WOLFRAM_APP_ID_1 = "AYQX66-UVWJ7KYPE2"
 WOLFRAM_APP_ID_2 = "XUX56R-PA24H6H9Q4"
 
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.0-flash")
 
-# === Function to detect if task is mathy ===
+# === Detect math vs visualization ===
 def is_math_query(text):
-    conceptual_patterns = [
-        r"what is .*",
-        r"explain .*",
-        r"describe .*",
-        r"how does .*",
-        r"define .*"
-    ]
-    if any(re.search(pattern, text.lower()) for pattern in conceptual_patterns):
+    conceptual = [r"what is .*", r"explain .*", r"describe .*", r"how does .*", r"define .*"]
+    if any(re.search(p, text.lower()) for p in conceptual):
         return False
-
-    math_keywords = [
+    math_kw = [
         "solve", "integral", "derivative", "limit", "differentiate",
         "evaluate", "simplify", "expression", "equation", "factor", "expand",
         "roots", "graph", "calculate", "area", "volume", "log", "ln", "sin", "cos", "tan"
     ]
-    
-    has_math_keywords = any(word in text.lower() for word in math_keywords)
-    has_numbers = bool(re.search(r"\d", text))
-    has_math_symbols = bool(re.search(r"[+\-*/^=]", text))
-    
-    return (has_math_keywords and (has_numbers or has_math_symbols))
+    return any(w in text.lower() for w in math_kw)
 
-# === Query Wolfram Alpha ===
+def is_visualization_query(text):
+    return bool(re.search(r"\bvisualization\b|\bgraph\b|\bplot\b|\b3d\b", text.lower()))
+
+# === Query Wolfram Alpha (plaintext + images) ===
 def query_wolfram(task):
-    # Step 1: Quick check if it's solvable
-    quick_url = "http://api.wolframalpha.com/v1/result"
-    quick_params = {
-        "i": task,
-        "appid": WOLFRAM_APP_ID_1
-    }
-    quick_response = requests.get(quick_url, params=quick_params)
-
-    if quick_response.status_code != 200 or "Wolfram" in quick_response.text:
+    # Quick check
+    quick = requests.get(
+        "http://api.wolframalpha.com/v1/result",
+        params={"i": task, "appid": WOLFRAM_APP_ID_1}
+    )
+    if quick.status_code != 200 or "Wolfram" in quick.text:
         return "Wolfram couldn't process this task."
 
-    # Step 2: Use Full API to get detailed response
-    full_url = "http://api.wolframalpha.com/v2/query"
-    full_params = {
-        "input": task,
-        "appid": WOLFRAM_APP_ID_2,
-        "format": "plaintext"
-    }
-    full_response = requests.get(full_url, params=full_params)
-
-    if full_response.status_code != 200:
+    # Full query with images
+    resp = requests.get(
+        "http://api.wolframalpha.com/v2/query",
+        params={
+            "input": task,
+            "appid": WOLFRAM_APP_ID_2,
+            "format": "plaintext,image"
+        }
+    )
+    if resp.status_code != 200:
         return "Wolfram full API failed."
 
     try:
-        root = ET.fromstring(full_response.text)
-        results = []
+        root = ET.fromstring(resp.text)
+        outputs = []
         for pod in root.findall(".//pod"):
-            title = pod.attrib.get("title", "")
-            subpod = pod.find("subpod")
-            plaintext = subpod.find("plaintext").text if subpod is not None else None
-            if plaintext and plaintext.strip():
-                results.append(f"**{title}**: {plaintext.strip()}")
+            title = pod.attrib.get("title", "").strip()
+            sub = pod.find("subpod")
+            # plaintext
+            if sub is not None and sub.find("plaintext") is not None:
+                text = sub.find("plaintext").text
+                if text and text.strip():
+                    outputs.append(f"**{title}**: {text.strip()}")
+            # image
+            if sub is not None and sub.find("img") is not None:
+                img = sub.find("img").attrib.get("src")
+                if img:
+                    outputs.append(f"![{title}]({img})")
 
-        return "\n".join(results) if results else "Wolfram returned no readable results."
-
+        return "\n\n".join(outputs) if outputs else "Wolfram returned no results."
     except Exception as e:
         return f"Error parsing Wolfram response: {e}"
 
-# === Ask Gemini to split the prompt ===
+# === Fallback heuristic splitter ===
+def heuristic_split(prompt):
+    parts = re.split(r"\s+and\s+", prompt, flags=re.IGNORECASE)
+    return [p.strip() for p in parts] if len(parts) > 1 else [prompt]
+
+# === Task splitting via Gemini + fallback ===
 def split_tasks(prompt):
-    system_prompt = (
-        "You are a task splitter. Given a user's request that may contain multiple subtasks, "
-        "split it into clean, short individual tasks. Respond with answering all tasks and returning the answer for all tasks correctly."
-    )
+    system_prompt = """Split this request into separate tasks. You MUST respond with ONLY a numbered list.
+
+Example input: "Calculate 2+2 and explain what addition is"
+Example output:
+1. Calculate 2+2
+2. Explain what addition is
+
+Example input: "Plot sin(x) and explain its period"
+Example output:
+1. Plot sin(x)
+2. Explain its period
+
+Now split this request (respond ONLY with numbered tasks):"""
     try:
         splitter = genai.GenerativeModel("gemini-2.0-flash")
-        messages = [
-            {
-                "role": "user",
-                "parts": [{"text": f"{system_prompt}\n\nUser request: {prompt}"}]
-            }
-        ]
-        response = splitter.generate_content(messages)
-        
-        print("Debug - Raw Gemini response:", response.text)
-        
-        tasks = re.findall(r"\d+\.\s*(.*)", response.text)
-        if tasks:
-            print("Debug - Extracted tasks:", tasks)
-            return tasks
-        else:
-            print("Warning: No tasks were extracted from Gemini's response")
-            return [prompt]
-    except Exception as e:
-        print(f"Error in task splitting: {e}")
-        return [prompt]
+        resp = splitter.generate_content([{
+            "role": "user",
+            "parts": [{"text": f"{system_prompt}\n\nRequest: {prompt}"}]
+        }])
+        print("Debug - Raw Gemini response:", resp.text)
 
-# === Clean task before Wolfram ===
-def clean_task_for_wolfram(task):
-    task = re.sub(r"<.*?>", "", task)         # Remove HTML tags
-    task = html.unescape(task)                # Unescape HTML entities
-    task = task.strip().rstrip(":")           # Trim and remove trailing colon
-    return task
+        tasks = re.findall(
+            r"^\s*(?:\d+[\.\)]|\-|\*)\s*(.+?)(?=(?:\n\s*(?:\d+[\.\)]|\-|\*)|\Z))",
+            resp.text, re.MULTILINE | re.DOTALL
+        )
+        tasks = [t.strip() for t in tasks if t.strip()]
+        return tasks or heuristic_split(prompt)
+    except Exception as e:
+        print("Error in task splitting:", e)
+        return heuristic_split(prompt)
 
 # === Smart routing logic ===
 def smart_prompt(prompt):
@@ -119,12 +114,12 @@ def smart_prompt(prompt):
     final_responses = []
 
     for task in tasks:
-        clean_task = clean_task_for_wolfram(task)
-
-        if is_math_query(clean_task):
-            print(f"🔢 Sending to Wolfram: {clean_task}")
-            answer = query_wolfram(clean_task)
-            final_responses.append(f"📊 **{task}** → {answer}")
+        # Visualization or math → Wolfram (with images)
+        if is_visualization_query(task) or is_math_query(task):
+            print(f"🔢 Sending to Wolfram (with images): {task}")
+            answer = query_wolfram(task)
+            final_responses.append(f"📊 **{task}** →\n\n{answer}")
+        # Otherwise → Gemini
         else:
             print(f"🧠 Sending to Gemini: {task}")
             response = model.generate_content(task)
@@ -138,6 +133,5 @@ if __name__ == "__main__":
         user_input = input("\n📝 Prompt ('q' to quit): ")
         if user_input.lower() == 'q':
             break
-        result = smart_prompt(user_input)
         print("\n✅ Combined Answer:\n")
-        print(result)
+        print(smart_prompt(user_input))
