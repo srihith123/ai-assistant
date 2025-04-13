@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Tutor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            position: relative; /* Needed for absolute positioning of shapes */
+            width: 300px; /* Increased width for better spacing */
+            min-height: 200px; /* Minimum height */
+            padding: 20px;
+            font-family: 'Poppins', sans-serif; /* Modern font */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #111111; /* Purdue Black (slightly softened) */
+            color: #f0f0f0; /* Light text color */
+            border-radius: 15px; /* More pronounced curve */
+            overflow: hidden; /* Hide overflowing shapes */
+            box-shadow: 0 4px 15px rgba(206, 184, 136, 0.1); /* Subtle Purdue gold glow */
+        }
+
+        h1 {
+            font-family: 'Poppins', sans-serif;
+            font-weight: 600;
+            color: #CEB888; /* Purdue Gold */
+            margin-bottom: 15px;
+            font-size: 22px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        button {
+            padding: 10px 25px; /* Slightly larger padding */
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            border-radius: 8px; /* Rounded rectangle */
+            margin-top: 15px;
+            background-color: #CEB888; /* Purdue Gold */
+            color: #111111; /* Dark text on button */
+            transition: background-color 0.2s ease, transform 0.1s ease;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+        button:hover {
+            background-color: #B8A47A; /* Darker Purdue Gold */
+            transform: translateY(-1px); /* Subtle lift effect */
+        }
+        button:active {
+            transform: translateY(0px);
+        }
+        button:disabled {
+             background-color: #8A7E63; /* Desaturated/darker Purdue Gold */
+             color: #555;
+             cursor: not-allowed;
+        }
+
+        #stopBtn {
+            background-color: #A4906A; /* Darker Purdue gold for stop */
+            color: #111111;
+        }
+        #stopBtn:hover {
+            background-color: #8A7E63; /* Even darker */
+        }
+
+        #screenshotPreview {
+            max-width: 90%;
+            max-height: 120px; /* Adjusted max height */
+            border: 2px solid #CEB888; /* Purdue Gold border */
+            margin-top: 15px;
+            display: none; /* Hide initially */
+            border-radius: 8px; /* Match button radius */
+            background-color: #222222; /* Dark background for preview area */
+        }
+
+        #statusMessage {
+            margin-top: 15px;
+            font-size: 12px;
+            color: #CCCCCC; /* Lighter grey for status */
+            text-align: center;
+            min-height: 15px;
+        }
+
+        /* Floating Shapes */
+        .shape {
+            position: absolute;
+            background-color: rgba(206, 184, 136, 0.15); /* Semi-transparent Purdue gold */
+            border-radius: 50%;
+            pointer-events: none; /* Don't interfere with clicks */
+            animation: float 10s infinite ease-in-out alternate;
+        }
+
+        .shape-1 { width: 50px; height: 50px; top: 10%; left: 5%; animation-duration: 12s; }
+        .shape-2 { width: 30px; height: 30px; top: 70%; left: 80%; animation-duration: 8s; }
+        .shape-3 { width: 40px; height: 40px; top: 40%; left: 60%; animation-duration: 10s; border-radius: 10px; background-color: rgba(206, 184, 136, 0.1); }
+        .shape-4 { width: 20px; height: 20px; top: 85%; left: 15%; animation-duration: 14s; }
+        .shape-5 { width: 60px; height: 60px; top: 5%; left: 75%; animation-duration: 9s; opacity: 0.8; background-color: rgba(206, 184, 136, 0.1); }
+
+
+        @keyframes float {
+            0% { transform: translateY(0px) translateX(0px) rotate(0deg); }
+            50% { transform: translateY(-10px) translateX(5px) rotate(15deg); }
+            100% { transform: translateY(5px) translateX(-5px) rotate(-10deg); }
+        }
+
+    </style>
+</head>
+<body>
+    <!-- Floating shapes -->
+    <div class="shape shape-1"></div>
+    <div class="shape shape-2"></div>
+    <div class="shape shape-3"></div>
+    <div class="shape shape-4"></div>
+    <div class="shape shape-5"></div>
+
+    <h1>AI Tutor</h1> <!-- Added Title -->
+    <p id="statusMessage">Click Screenshot to start.</p>
+    <img id="screenshotPreview" src="" alt="Screenshot Preview">
+    <button id="screenshotBtn">Screenshot</button>
+    <button id="pushToTalkBtn">Hold to Talk</button>
+    <button id="stopBtn" style="display: none;">Stop AI</button>
+
+    <script src="popup.js"></script>
+</body>
+</html> 
