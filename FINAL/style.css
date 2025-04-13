@@ -1,0 +1,21 @@
+#ai-tutor-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: transparent; /* Removed blurring/darkening effect */
+    cursor: crosshair;
+    z-index: 9999998;
+}
+
+
+#ai-tutor-selection-box {
+    position: fixed; /* Fixed position relative to the viewport */
+    border: 2px dashed red;
+    background-color: rgba(255, 0, 0, 0.1); /* Light red tint */
+    display: none; /* Initially hidden */
+    pointer-events: none; /* Allow clicks to pass through to the overlay */
+    z-index: 9999999; /* Highest z-index */
+    box-sizing: border-box; /* Include border in width/height */
+} 
