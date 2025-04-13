@@ -14,6 +14,7 @@ genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.0-flash")
 
 contextQueue = deque()
+image_context = None  # Global variable to store the current image context
 
 # === Fallback heuristic splitter ===
 def heuristic_split(prompt):
@@ -93,6 +94,82 @@ def add_context_to_prompt(prompt):
         return f"Context:\n{context_summary}\n\n{prompt}"
     return prompt
 
+# Extend contextQueue to include an image context
+def store_image_context(image_source=None):
+    """
+    Stores the given image source (URL or local file) as the current image context.
+    Validates the source and defaults to 'Quadratic_Graph.png' if none provided.
+    """
+    global image_context
+    if image_source is None:
+        image_source = "Quadratic_Graph.png"  # Default image
+    else:
+        # Validate image source
+        if not (image_source.startswith(("http://", "https://")) or os.path.exists(image_source)):
+            print(f"Invalid image source: {image_source}")
+            return
+    image_context = image_source
+    print(f"📷 Image context updated: {image_source}")
+
+def add_image_context_to_prompt(prompt):
+    """
+    Adds image context to the prompt by analyzing the image with respect to the user's query.
+    """
+    if image_context:
+        try:
+            # Analyze the image, passing the user's prompt for context
+            image_analysis = analyze_image(image_context, user_prompt=prompt)
+            return f"Image Context Analysis:\n{image_analysis}\n\n{prompt}"
+        except Exception as e:
+            print(f"Error analyzing image context: {e}")
+            return f"Image Context: {image_context}\n\n{prompt}"
+    return prompt
+
+def analyze_image(image_source, user_prompt=None):
+    """
+    Analyzes an image (URL or local file) and returns meaningful information based on context.
+    
+    Args:
+        image_source (str): URL or local path to the image.
+        user_prompt (str, optional): User's query to guide analysis (e.g., "What is the equation of this graph?").
+    
+    Returns:
+        str: Analysis or description of the image.
+    """
+    try:
+        # Default system prompt for generic analysis
+        system_prompt = """Analyze the provided image and provide a concise description or meaningful information.
+        If the image contains specific elements like text, equations, graphs, or objects, describe them in detail.
+        If a user query is provided, tailor the analysis to answer it."""
+
+        # Customize prompt if user query is provided
+        if user_prompt:
+            system_prompt += f"\n\nUser Query: {user_prompt}\nFocus the analysis on answering this query."
+
+        # Check if the image is a URL or local file
+        if image_source.startswith(("http://", "https://")):
+            # For URLs, pass directly to Gemini
+            parts = [{"text": system_prompt}, {"image_url": image_source}]
+        else:
+            # For local files, read and encode the image
+            with open(image_source, "rb") as f:
+                image_data = f.read()
+            parts = [{"text": system_prompt}, {"inline_data": {"data": image_data, "mime_type": "image/png"}}]
+
+        # Generate analysis using Gemini
+        resp = model.generate_content(parts)
+        analysis = resp.text.strip()
+
+        # Validate the response to ensure it's meaningful
+        if not analysis or "error" in analysis.lower():
+            return "Could not extract meaningful information from the image."
+
+        return analysis
+
+    except Exception as e:
+        print(f"Error analyzing image: {e}")
+        return f"Failed to analyze the image: {str(e)}"
+
 # === Store Response in Context ===
 def store_response_in_context(user_input, response):
     """
@@ -156,10 +233,33 @@ Task:
         # Default to False if the check fails
         return False
 
-# === Smart routing logic with task classification ===
+def make_response_personable(prompt, combined_response):
+    """
+    Uses the Gemini API to make the response more personable and natural.
+    If any visuals exist, make sure to tell the user that some visual is there.
+    """
+    try:
+        system_prompt = """Given the following user prompt and the assistant's responses, create a personable and natural response.
+Make sure the response is conversational and easy to understand.
+
+User Prompt:
+{prompt}
+
+Assistant's Responses:
+{combined_response}
+
+Personable Response:"""
+        resp = model.generate_content(system_prompt.format(prompt=prompt, combined_response=combined_response))
+        return resp.text.strip()
+    except Exception as e:
+        print(f"Error making response personable: {e}")
+        # Fallback to returning the combined response if Gemini fails
+        return combined_response
+
+# === Smart routing logic with task classification and personable response ===
 def smart_prompt_with_context(prompt):
     """
-    Processes the prompt using Wolfram and Gemini, including context from the contextQueue.
+    Processes the prompt using Wolfram and Gemini, including context from the contextQueue and image context.
     Always updates the context, but only includes it in the new prompt if the new prompt is related to the context.
     """
     # Check if the new prompt is related to the existing context
@@ -167,6 +267,8 @@ def smart_prompt_with_context(prompt):
         prompt_with_context = add_context_to_prompt(prompt)
     else:
         prompt_with_context = prompt
+
+    prompt_with_context = add_image_context_to_prompt(prompt_with_context)
 
     # Split the tasks from the prompt (with or without context)
     tasks = split_tasks(prompt_with_context)
@@ -204,13 +306,23 @@ def smart_prompt_with_context(prompt):
     # Always update the context with the new response
     store_response_in_context(prompt, combined_response)
 
-    return combined_response
+    # Make the response more personable using Gemini
+    personable_response = make_response_personable(prompt, combined_response)
 
-# === Example Loop ===
+    return personable_response
+
+# === Example Loop with Image Context ===
 if __name__ == "__main__":
+    # Set the default image context to 'Quadratic_Graph.png'
+    store_image_context()
+
     while True:
-        user_input = input("\n📝 Prompt ('q' to quit): ")
+        user_input = input("\n📝 Prompt ('q' to quit, 'set image <url>' to set image context): ")
         if user_input.lower() == 'q':
             break
-        print("\n✅ Combined Answer:\n")
-        print(smart_prompt_with_context(user_input))
+        elif user_input.lower().startswith("set image "):
+            image_url = user_input[len("set image "):].strip()
+            store_image_context(image_url)
+        else:
+            print("\n✅ Combined Answer:\n")
+            print(smart_prompt_with_context(user_input))
